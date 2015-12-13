@@ -40,10 +40,7 @@ def get_location(location):
 def get_forecast(src, dest, departure_datetime, speed_mph, time_step):
     src_coord = resolve_location(src)
     dest_coord = resolve_location(dest)
-    utc_offset = get_offset_from_utc(src_coord)
     departure_date = datetime.strptime(departure_datetime, '%Y-%m-%dT%H:%M:%S')
-    departure_date_utc = (departure_date + timedelta(seconds=utc_offset)).replace(
-        tzinfo=timezone('UTC'))
     miles_per_step = float(speed_mph) * float(time_step)
 
     forecasts = []
@@ -53,7 +50,7 @@ def get_forecast(src, dest, departure_datetime, speed_mph, time_step):
     while distance_traveled < total_miles:
         current_loc_tuple = get_new_coord(src_coord, dest_coord, distance_traveled)
         current_loc_arr = [current_loc_tuple[0], current_loc_tuple[1]]
-        current_timestamp = int((departure_date_utc +
+        current_timestamp = int((departure_date +
                          timedelta(seconds=time_traveled * SECONDS_IN_HOUR)).strftime('%s'))
         weather_info = get_weather(current_loc_tuple, current_timestamp)
         forecast = {
@@ -63,13 +60,26 @@ def get_forecast(src, dest, departure_datetime, speed_mph, time_step):
             'location_rnd': [round(i, 2) for i in current_loc_arr],
             'temperature': weather_info.temperature,
             'time': current_timestamp,
+            'time_offset': weather_info.time_offset,
             'time_rnd': int(current_timestamp),
             'wind_speed': weather_info.wind_speed
         }
+        forecast = {k: v for k, v in forecast.items() if v}  # Remove None values
         forecasts.append(forecast)
         distance_traveled += miles_per_step
         time_traveled += float(time_step)
     return jsonify(forecast=forecasts)
+
+
+def calculate_distance(src_coord, dest_coord):
+    src_coord = tuple(radians(i) for i in src_coord)
+    dest_coord = tuple(radians(i) for i in dest_coord)
+    dlat = dest_coord[0] - src_coord[0]
+    dlong = dest_coord[1] - src_coord[1]
+
+    a = sin(dlat / 2)**2 + cos(src_coord[0]) * cos(dest_coord[0]) * sin(dlong / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return EARTH_RADIUS * c * MILES_PER_KM
 
 
 def get_airport_coordinates(iata_code):
@@ -96,21 +106,22 @@ def get_offset_from_utc(coord):
     request = urllib2.Request('{}timezone/json?location={},{}&timestamp=0&key={}'.format(
         GOOGLE_MAP_ENDPOINT, coord[0], coord[1], GOOGLE_MAP_TIME_ZONE_KEY))
     time_zone_info = json.loads(urllib2.urlopen(request).read())
-    print('request: {}, coord: {}, response: {}'.format('{}timezone/json?location={},{}&timestamp=0&key={}'.format(
-        GOOGLE_MAP_ENDPOINT, coord[0], coord[1], GOOGLE_MAP_TIME_ZONE_KEY), coord, time_zone_info))
     return time_zone_info.get('rawOffset', None)  # Seconds
 
 
 def get_weather(coord, timestamp):
     request = urllib2.Request('{}{}/{},{},{}'.format(
         FORECAST_ENDPOINT, FORECAST_KEY, coord[0], coord[1], timestamp))
-    forecast_info = json.loads(urllib2.urlopen(request).read())['currently']
-    WeatherInfo = collections.namedtuple('WeatherInfo', 'humidity, incomplete, temperature, wind_speed')
-    humidity = forecast_info.get('humidity')
-    temperature = forecast_info.get('temperature')
-    wind_speed = forecast_info.get('windSpeed')
-    incomplete = any(i is None for i in [humidity, temperature, wind_speed])
-    return WeatherInfo(humidity, incomplete, temperature, wind_speed)
+    forecast_info = json.loads(urllib2.urlopen(request).read())
+
+    humidity = forecast_info['currently'].get('humidity')
+    temperature = forecast_info['currently'].get('temperature')
+    wind_speed = forecast_info['currently'].get('windSpeed')
+    time_offset = forecast_info.get('offset')
+    incomplete = any(i is None for i in [humidity, temperature, wind_speed, time_offset])
+
+    WeatherInfo = collections.namedtuple('WeatherInfo', 'humidity, incomplete, temperature, wind_speed, time_offset')
+    return WeatherInfo(humidity, incomplete, temperature, wind_speed, time_offset)
 
 
 def resolve_location(location):
@@ -121,17 +132,6 @@ def resolve_location(location):
     else:
         lat, long = get_airport_coordinates(location)
     return lat, long
-
-
-def calculate_distance(src_coord, dest_coord):
-    src_coord = tuple(radians(i) for i in src_coord)
-    dest_coord = tuple(radians(i) for i in dest_coord)
-    dlat = dest_coord[0] - src_coord[0]
-    dlong = dest_coord[1] - src_coord[1]
-
-    a = sin(dlat / 2)**2 + cos(src_coord[0]) * cos(dest_coord[0]) * sin(dlong / 2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    return EARTH_RADIUS * c * MILES_PER_KM
 
 
 if __name__ == '__main__':
