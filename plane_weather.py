@@ -12,8 +12,6 @@ AERO_KEY = '83af8148873102bc1995d8aa5938df18'
 AERO_CODES_ENDPOINT = 'https://airport.api.aero/'
 FORECAST_KEY = '21c8103568c26a8ba85b25c9fc678983'
 FORECAST_ENDPOINT = 'https://api.forecast.io/forecast/'
-GOOGLE_MAP_TIME_ZONE_KEY = 'AIzaSyDKGwy9xNxoPwLDvsmClo8NkLQw6XoF1cA'
-GOOGLE_MAP_ENDPOINT = 'https://maps.googleapis.com/maps/api/'
 
 EARTH_RADIUS = 6373.0  # In km
 MILES_PER_KM = 0.621371
@@ -67,6 +65,11 @@ def get_forecast(src, dest, departure_datetime, speed_mph, time_step):
 
 
 def calculate_distance(src_coord, dest_coord):
+    '''Calculates the distance between two coordinates
+    :param (int, int) src_coord: source coordinate in latitude, longitude
+    :param (int, int) dest_coord: destination coordinate in latitude, longitude
+    :return int: distance in miles
+    '''
     src_coord = tuple(radians(i) for i in src_coord)
     dest_coord = tuple(radians(i) for i in dest_coord)
     dlat = dest_coord[0] - src_coord[0]
@@ -78,6 +81,10 @@ def calculate_distance(src_coord, dest_coord):
 
 
 def get_airport_coordinates(iata_code):
+    ''' Gets the the coordinates of an airport given its iata code
+    :param str iata_code: airport iata code
+    :return (int, int): airport coordinate in latitude, longitude
+    '''
     iata_code = iata_code.upper()
     request = urllib2.Request('{}airport/{}?user_key={}'.format(
         AERO_CODES_ENDPOINT, iata_code, AERO_KEY), headers={'Accept': 'application/json'})
@@ -86,6 +93,12 @@ def get_airport_coordinates(iata_code):
 
 
 def get_new_coord(src_coord, dest_coord, miles_traveled):
+    ''' Calculates the waypoint coordinate based on the number of miles traveled
+    :param (int, int) src_coord: source coordinate in latitude, longitude
+    :param (int, int) dest_coord: destination coordinate in latitude, longitude
+    :param int miles_traveled:
+    :return (int, int): waypoint coordinate in latitude, longitude
+    '''
     total_distance = calculate_distance(src_coord, dest_coord)
     proportion_traveled = miles_traveled / total_distance
 
@@ -97,14 +110,12 @@ def get_new_coord(src_coord, dest_coord, miles_traveled):
     return new_lat, new_long
 
 
-def get_offset_from_utc(coord):
-    request = urllib2.Request('{}timezone/json?location={},{}&timestamp=0&key={}'.format(
-        GOOGLE_MAP_ENDPOINT, coord[0], coord[1], GOOGLE_MAP_TIME_ZONE_KEY))
-    time_zone_info = json.loads(urllib2.urlopen(request).read())
-    return time_zone_info.get('rawOffset', None)  # Seconds
-
-
 def get_weather(coord, timestamp):
+    ''' Gets weather information from forecast.io
+    :param (int, int) coord: coordinate in latitude, longitude
+    :param int timestamp: unix timestamp
+    :return WeatherInfo: weather information for a given time and location
+    '''
     request = urllib2.Request('{}{}/{},{},{}'.format(
         FORECAST_ENDPOINT, FORECAST_KEY, coord[0], coord[1], timestamp))
     forecast_info = json.loads(urllib2.urlopen(request).read())
@@ -120,6 +131,10 @@ def get_weather(coord, timestamp):
 
 
 def resolve_location(location):
+    ''' Gets the coordinates of a location provided as the IATA code or coordinate
+    :param location: IATA code (str) or coordinate ((int, int) in latitude, longitude)
+    :return: location's coordinate in latitude, longitude
+    '''
     if ',' in location:
         lat_long = location.split(',')
         lat = int(lat_long[0])
