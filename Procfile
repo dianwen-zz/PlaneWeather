@@ -1,0 +1,1 @@
+web: gunicorn plane_weather:app --log-file=-
