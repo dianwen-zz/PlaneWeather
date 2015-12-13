@@ -1,3 +1,4 @@
+import collections
 from datetime import datetime, timedelta
 from flask import Flask, jsonify
 import json
@@ -52,13 +53,18 @@ def get_forecast(src, dest, departure_datetime, speed_mph, time_step):
     while distance_traveled < total_miles:
         current_loc_tuple = get_new_coord(src_coord, dest_coord, distance_traveled)
         current_loc_arr = [current_loc_tuple[0], current_loc_tuple[1]]
-        utc_offset = get_offset_from_utc(current_loc_tuple)
+        current_timestamp = int((departure_date_utc +
+                         timedelta(seconds=time_traveled * SECONDS_IN_HOUR)).strftime('%s'))
+        weather_info = get_weather(current_loc_tuple, current_timestamp)
         forecast = {
+            'humidity': weather_info.humidity,
+            'incomplete': weather_info.incomplete,
             'location': current_loc_arr,
             'location_rnd': [round(i, 2) for i in current_loc_arr],
-            'time': int((departure_date_utc +
-                         timedelta(seconds=time_traveled * SECONDS_IN_HOUR)).strftime('%s')),
-            'time_offset': utc_offset / SECONDS_IN_HOUR if utc_offset is not None else None
+            'temperature': weather_info.temperature,
+            'time': current_timestamp,
+            'time_rnd': int(current_timestamp),
+            'wind_speed': weather_info.wind_speed
         }
         forecasts.append(forecast)
         distance_traveled += miles_per_step
@@ -93,6 +99,18 @@ def get_offset_from_utc(coord):
     print('request: {}, coord: {}, response: {}'.format('{}timezone/json?location={},{}&timestamp=0&key={}'.format(
         GOOGLE_MAP_ENDPOINT, coord[0], coord[1], GOOGLE_MAP_TIME_ZONE_KEY), coord, time_zone_info))
     return time_zone_info.get('rawOffset', None)  # Seconds
+
+
+def get_weather(coord, timestamp):
+    request = urllib2.Request('{}{}/{},{},{}'.format(
+        FORECAST_ENDPOINT, FORECAST_KEY, coord[0], coord[1], timestamp))
+    forecast_info = json.loads(urllib2.urlopen(request).read())['currently']
+    WeatherInfo = collections.namedtuple('WeatherInfo', 'humidity, incomplete, temperature, wind_speed')
+    humidity = forecast_info.get('humidity')
+    temperature = forecast_info.get('temperature')
+    wind_speed = forecast_info.get('windSpeed')
+    incomplete = any(i is None for i in [humidity, temperature, wind_speed])
+    return WeatherInfo(humidity, incomplete, temperature, wind_speed)
 
 
 def resolve_location(location):
