@@ -36,6 +36,3 @@ def get_airport_coordinates(iata_code):
         AERO_CODES_ENDPOINT, iata_code, AERO_API_KEY), headers={'Accept': 'application/json'})
     airport_info = json.loads(urllib2.urlopen(request).read())['airports'][0]
     return airport_info['lat'], airport_info['lng']
-
-
-print(get_airport_coordinates('rdu'))
